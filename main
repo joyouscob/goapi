@@ -1,0 +1,268 @@
+package main
+
+import (
+	"fmt"
+	"log"
+	"net/http"
+	"regexp"
+
+	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
+	"github.com/go-playground/validator/v10"
+	"github.com/google/uuid"
+)
+
+//uribinding struct, bind value from uri
+type uriBinding struct {
+	ID string `uri:"id"`
+}
+
+//json binding struct
+type Product struct {
+	// ID string `uri:"id"`
+	ID   string
+	Name string
+}
+
+//form binding struct
+type FormStruct struct {
+	ID   string `form:"id"`
+	Name string `form:"name"`
+}
+
+//bind value from header
+type headerBinding struct {
+	RequestId string `header:"X-Request-ID"`
+}
+
+//customer struct
+type Customer struct {
+	Email         string `json:"email" binding:"required,email"`
+	Password      string `json:"password" binding:"required,password"`
+	Role          string `json:"role" binding:"required,oneof=BASIC ADMIN"`
+	StreetAddress string `json:"streetAddress"`
+	StreetNumber  int    `json:"streetNumber" binding:"required_with=StreetAddress"`
+}
+
+//custom validator
+func verifyPassword(fl validator.FieldLevel) bool {
+	var regex = regexp.MustCompile("\\w{8,}") //lenght of 8
+	var password = fl.Field().String()
+	return regex.MatchString(password)
+
+}
+
+//GET /product 200
+//GET /product/:guid 200
+//POST /products 201
+//PUT /products/guid 200
+//DELETE /product/guid 204
+
+func main() {
+	//set gins default address
+	var router = gin.Default()
+	var address = ":3000"
+
+	//get access into the validator engine
+	if v, ok := binding.Validator.Engine().(*validator.Validate); ok {
+		v.RegisterValidation("password", verifyPassword)
+	}
+
+	//router.GET
+	//router.POST
+	//router.PUT
+	//router.HEAD DELETE OPTIONS
+	//one way to write a router from gin
+	router.GET("/hello", func(c *gin.Context) {
+		c.String(http.StatusOK, "Hello World")
+	})
+
+	//another way to
+	router.Handle(http.MethodPost, "/post", func(c *gin.Context) {
+		c.String(http.StatusOK, "post")
+	})
+
+	//Grouping routers
+
+	var v1 = router.Group("/api/v1")
+	v1.GET("/group", func(c *gin.Context) {
+		c.String(http.StatusOK, "Grouped Context")
+	})
+
+	var v2 = router.Group("/api/v2")
+	v2.POST("post", func(c *gin.Context) {
+		c.String(http.StatusOK, "Post Context")
+
+	})
+
+	//ACCESSING INFORMATION
+	//c.param
+	router.GET("/product/:id", func(c *gin.Context) {
+		var id = c.Param("id")
+		c.String(http.StatusOK, id)
+	})
+	//c.Query
+	router.GET("/products/:id", func(c *gin.Context) {
+		var id = c.Query("name")
+		c.String(http.StatusOK, id)
+	})
+
+	//c.DefaultQuery
+	router.GET("/prod/:id", func(c *gin.Context) {
+		var id = c.DefaultQuery("name", "Sege")
+		c.String(http.StatusOK, id)
+	})
+	//c.PostForm
+	router.POST("/post/prod/:id", func(c *gin.Context) {
+		var id = c.PostForm("id")
+		c.String(http.StatusOK, id)
+	})
+	//c.DefaultPostForm
+	router.POST("/post/def/:id", func(c *gin.Context) {
+		var id = c.DefaultPostForm("id", "100")
+		c.String(http.StatusOK, id)
+	})
+
+	//c.GetHeader
+	router.GET("/post/header", func(c *gin.Context) {
+		var id = c.GetHeader("User-Agent")
+		c.String(http.StatusOK, id)
+	})
+
+	//MODEL BINDING
+	//c.ShouldBindURI
+	router.GET("/prod/bind/:id", func(c *gin.Context) {
+		var binding uriBinding
+
+		if e := c.ShouldBindUri(&binding); e != nil {
+			c.String(http.StatusBadRequest, e.Error())
+			return
+		}
+		fmt.Println("Binding: ", binding)
+
+	})
+	//c.ShouldBindJSON
+	router.POST("/prod/json", func(c *gin.Context) {
+		var product Product
+
+		if e := c.ShouldBindJSON(&product); e != nil {
+			c.String(http.StatusBadRequest, e.Error())
+			return
+		}
+		fmt.Println("Binding: ", product)
+
+	})
+	//c.ShouldBind
+	router.POST("/prod/form", func(c *gin.Context) {
+		var product FormStruct
+
+		if e := c.ShouldBind(&product); e != nil {
+			c.String(http.StatusBadRequest, e.Error())
+			return
+		}
+		fmt.Println("Binding: ", product)
+
+	})
+	//c.ShouldBindHeader
+	router.POST("/prod/header", func(c *gin.Context) {
+		var binding headerBinding
+
+		if e := c.ShouldBindHeader(&binding); e != nil {
+			c.String(http.StatusBadRequest, e.Error())
+			return
+		}
+		fmt.Println("Binding: ", binding)
+
+	})
+
+	//
+	router.POST("/customers", func(c *gin.Context) {
+		var customer Customer
+		if e := c.ShouldBindJSON(&customer); e != nil {
+			c.String(http.StatusBadRequest, e.Error())
+			return
+		}
+
+		fmt.Println("Customer:", customer)
+		c.String(http.StatusOK, "Hello World")
+	})
+
+	//LOADING STATIC FILES
+	//router.Static
+	//router.StaticFS
+	//router.StaticFile e.g single files like favicon
+
+	//we are able to view particular file and also index.html from the root directory
+	// router.Static("/assets", "./assets")
+
+	// router.StaticFS("/assets", http.Dir("./assets"))
+	//router.StaticFile("/hello", "./assets/hello.txt") //remap url e.g this will be url/hello to display the content of hello.txt
+
+	//LOAD HTML FILE
+	//LoadHTMLGLob
+	//loadHTMLFiles
+	router.LoadHTMLGlob("./templates/*")                                    //you can use widlcard
+	router.LoadHTMLFiles("./templates/home.html", "./templates/about.html") //you can use widlcard
+
+	router.GET("/home", func(c *gin.Context) {
+		c.HTML(http.StatusOK, "home.html", nil)
+	})
+
+	router.GET("/about", func(c *gin.Context) {
+		c.HTML(http.StatusOK, "about.html", gin.H{
+			"title":       "About Us",
+			"description": "This is a sample description",
+		})
+	})
+
+	//redirect
+	router.GET("/redirect", func(c *gin.Context) {
+		c.Redirect(http.StatusTemporaryRedirect, "/about")
+	})
+
+	//MIDDLEWARE - execute code before the request reaches the controller
+	router.Use(func(c *gin.Context) {
+		//get  X-Request-Id parameter from header
+		var requestID = c.GetHeader("X-Request-Id")
+
+		//lets do some checks
+		if len(requestID) == 0 {
+			//generate a uuid if its not present in the header usign the google uuid and convert to string
+			var id = uuid.New().String()
+			//then write it to the header
+			c.Writer.Header().Add("X-Request-Id", id)
+		} else {
+			//if it exists write it back to the header, in short just allow it is all we are saying
+			c.Writer.Header().Add("X-Request-Id", requestID)
+		}
+		fmt.Println("logging...")
+	})
+	router.GET("/ping", func(c *gin.Context) {
+		//get resquest reponse as json
+		var customer = Customer{
+			Email:         "test@test.com",
+			Role:          "BASIC",
+			StreetAddress: "Address",
+			StreetNumber:  1,
+		}
+		c.JSON(http.StatusOK, customer)
+	})
+
+	//SAMPLE AUTH MIDDLEWARE
+	//for AUTH MIDDLEWARE
+	var accounts = map[string]string{
+		"john": "doe",
+		"foo":  "bar",
+	}
+	var authMiddleware = gin.BasicAuth(accounts)
+	router.GET("/auth", authMiddleware, func(c *gin.Context) {
+		c.String(http.StatusOK, "pong")
+	})
+	router.GET("/another/auth", func(c *gin.Context) {
+		c.String(http.StatusOK, "pong")
+	})
+
+	//log any error from the router
+	log.Fatalln(router.Run(address))
+
+}
